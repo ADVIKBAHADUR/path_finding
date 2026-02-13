@@ -11,7 +11,7 @@ setup(
     name="path_finding",
     version="0.1.0",
     author="ADVIKBAHADUR",
-    description="Implementation of various path-finding and decision-making algorithms",
+    description="Template for implementing various path-finding and decision-making algorithms",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/ADVIKBAHADUR/path_finding",
@@ -33,8 +33,5 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
     python_requires=">=3.7",
-    install_requires=[
-        "numpy>=1.19.0",
-    ],
-    keywords="pathfinding algorithms bfs dfs astar mdp",
+    keywords="pathfinding algorithms bfs dfs astar mdp template",
 )

@@ -1,13 +1,14 @@
-# Path Finding Algorithms
+# Path Finding Algorithms - Template Package
 
-A Python package implementing various path-finding and decision-making algorithms including BFS, DFS, A*, and MDP.
+A Python package template for implementing various path-finding and decision-making algorithms including BFS, DFS, A*, and MDP.
 
 ## Overview
 
-This package provides implementations of fundamental pathfinding and graph traversal algorithms, designed for educational purposes and practical applications in robotics, game development, and AI research.
+This package provides a structured template for implementing fundamental pathfinding and graph traversal algorithms. The structure is ready for you to add your own algorithm implementations.
 
 ## Features
 
+Template stubs provided for:
 - **Breadth-First Search (BFS)**: Explore graphs layer by layer
 - **Depth-First Search (DFS)**: Explore graphs by going as deep as possible
 - **A* (A-Star)**: Optimal pathfinding using heuristics
@@ -22,188 +23,137 @@ This package provides implementations of fundamental pathfinding and graph trave
 git clone https://github.com/ADVIKBAHADUR/path_finding.git
 cd path_finding
 
-# Install the package
+# Install the package in editable mode
 pip install -e .
 ```
 
-### Using pip (after publishing to PyPI)
+## Package Structure
 
-```bash
-pip install path_finding
+```
+path_finding/
+├── src/
+│   └── path_finding/
+│       ├── __init__.py          # Package exports
+│       ├── bfs.py               # BFS algorithm template
+│       ├── dfs.py               # DFS algorithm template
+│       ├── astar.py             # A* algorithm template
+│       └── mdp.py               # MDP algorithm template
+├── setup.py                      # Package setup
+├── pyproject.toml               # Modern Python packaging
+└── README.md                    # This file
 ```
 
-## Quick Start
+## Implementation Guide
 
-### BFS Example
+Each algorithm file contains:
+- Function signatures with type hints
+- Comprehensive docstrings
+- TODO comments marking where to implement logic
+
+### Example: Implementing BFS
+
+Edit `src/path_finding/bfs.py`:
 
 ```python
-from path_finding import bfs
+def bfs(graph: Dict[Any, List[Any]], start: Any, goal: Any) -> Optional[List[Any]]:
+    """
+    Perform Breadth-First Search on a graph.
+    
+    Args:
+        graph: A dictionary representing the graph where keys are nodes
+               and values are lists of neighboring nodes
+        start: The starting node
+        goal: The goal/target node
+    
+    Returns:
+        A list representing the path from start to goal, or None if no path exists
+    """
+    # TODO: Implement BFS algorithm
+    # Add your implementation here
+    from collections import deque
+    
+    if start == goal:
+        return [start]
+    
+    queue = deque([(start, [start])])
+    visited = {start}
+    
+    while queue:
+        node, path = queue.popleft()
+        for neighbor in graph.get(node, []):
+            if neighbor == goal:
+                return path + [neighbor]
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, path + [neighbor]))
+    
+    return None
+```
 
-# Define a graph
+## Usage
+
+After implementing the algorithms, you can use them as follows:
+
+```python
+from path_finding import bfs, dfs, astar, MDP
+
+# Example graph
 graph = {
     'A': ['B', 'C'],
-    'B': ['A', 'D', 'E'],
-    'C': ['A', 'F'],
-    'D': ['B'],
-    'E': ['B', 'F'],
-    'F': ['C', 'E']
+    'B': ['D'],
+    'C': ['D'],
+    'D': []
 }
 
-# Find path from A to F
-path = bfs(graph, 'A', 'F')
-print(f"Path: {path}")  # Output: Path: ['A', 'C', 'F']
+# Use your implemented algorithms
+path = bfs(graph, 'A', 'D')
 ```
 
-### DFS Example
+## Algorithms to Implement
 
-```python
-from path_finding import dfs
-
-# Find path using DFS
-path = dfs(graph, 'A', 'F')
-print(f"Path: {path}")
-```
-
-### A* Example
-
-```python
-from path_finding import astar
-
-# Define a weighted graph
-graph = {
-    'A': [('B', 1), ('C', 4)],
-    'B': [('A', 1), ('D', 2), ('E', 5)],
-    'C': [('A', 4), ('F', 3)],
-    'D': [('B', 2)],
-    'E': [('B', 5), ('F', 1)],
-    'F': [('C', 3), ('E', 1)]
-}
-
-# Define heuristic function
-def heuristic(node, goal):
-    return 0  # Simplified for this example
-
-# Find optimal path
-result = astar(graph, 'A', 'F', heuristic)
-if result:
-    path, cost = result
-    print(f"Path: {path}, Cost: {cost}")
-```
-
-### A* Grid Example
-
-```python
-from path_finding import astar_grid
-
-# Define a grid (0 = walkable, 1 = obstacle)
-grid = [
-    [0, 0, 0, 0, 0],
-    [0, 1, 1, 0, 0],
-    [0, 0, 0, 0, 0],
-    [0, 0, 1, 1, 0],
-    [0, 0, 0, 0, 0]
-]
-
-# Find path from (0,0) to (4,4)
-result = astar_grid(grid, (0, 0), (4, 4))
-if result:
-    path, cost = result
-    print(f"Path: {path}")
-    print(f"Cost: {cost}")
-```
-
-### MDP Example
-
-```python
-from path_finding import MDP
-
-# Define states and actions
-states = ['s1', 's2', 's3']
-actions = ['a1', 'a2']
-
-# Define transition probabilities
-def transition_prob(state, action, next_state):
-    # Define your transition probabilities here
-    if state == 's1' and action == 'a1' and next_state == 's2':
-        return 0.8
-    # ... more transitions
-    return 0.0
-
-# Define rewards
-def reward(state, action, next_state):
-    if next_state == 's3':
-        return 10.0
-    return -1.0
-
-# Create and solve MDP
-mdp = MDP(states, actions, transition_prob, reward, gamma=0.9)
-values = mdp.value_iteration()
-policy = mdp.extract_policy(values)
-
-print(f"Optimal values: {values}")
-print(f"Optimal policy: {policy}")
-```
-
-## Algorithms
-
-### BFS (Breadth-First Search)
-- **Time Complexity**: O(V + E)
-- **Space Complexity**: O(V)
-- **Use Case**: Unweighted graphs, shortest path in terms of edges
-
-### DFS (Depth-First Search)
-- **Time Complexity**: O(V + E)
-- **Space Complexity**: O(V)
-- **Use Case**: Graph traversal, cycle detection, topological sorting
-
-### A* (A-Star)
-- **Time Complexity**: O(E) in worst case
-- **Space Complexity**: O(V)
-- **Use Case**: Weighted graphs, optimal pathfinding with heuristics
-
-### MDP (Markov Decision Process)
-- **Algorithms**: Value Iteration, Policy Iteration
-- **Use Case**: Decision-making under uncertainty, reinforcement learning
-
-## API Reference
-
-### BFS
+### BFS (src/path_finding/bfs.py)
 - `bfs(graph, start, goal)`: Find shortest path
 - `bfs_traverse(graph, start)`: Traverse all reachable nodes
 
-### DFS
+### DFS (src/path_finding/dfs.py)
 - `dfs(graph, start, goal)`: Find path using DFS (recursive)
 - `dfs_iterative(graph, start, goal)`: Find path using DFS (iterative)
 - `dfs_traverse(graph, start)`: Traverse all reachable nodes
 
-### A*
+### A* (src/path_finding/astar.py)
 - `astar(graph, start, goal, heuristic)`: Find optimal path in weighted graph
 - `astar_grid(grid, start, goal, heuristic)`: Find path in 2D grid
 - `manhattan_distance(pos1, pos2)`: Manhattan distance heuristic
 - `euclidean_distance(pos1, pos2)`: Euclidean distance heuristic
 
-### MDP
-- `MDP(states, actions, transition_prob, reward, gamma)`: Create MDP instance
-- `value_iteration(epsilon, max_iterations)`: Solve using value iteration
-- `policy_iteration(max_iterations)`: Solve using policy iteration
+### MDP (src/path_finding/mdp.py)
+- `MDP` class with methods:
+  - `value_iteration(epsilon, max_iterations)`: Solve using value iteration
+  - `policy_iteration(max_iterations)`: Solve using policy iteration
+  - `extract_policy(V)`: Extract policy from value function
 - `solve_mdp_value_iteration(...)`: Convenience function for value iteration
 - `solve_mdp_policy_iteration(...)`: Convenience function for policy iteration
 
-## Development
+## Testing Your Implementation
 
-### Running Tests
+Create test files to verify your implementations:
 
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
+```python
+# test_bfs.py
+from path_finding import bfs
 
-# Run tests
-pytest
+def test_bfs_simple_path():
+    graph = {'A': ['B'], 'B': ['C'], 'C': []}
+    assert bfs(graph, 'A', 'C') == ['A', 'B', 'C']
+
+def test_bfs_no_path():
+    graph = {'A': ['B'], 'B': [], 'C': []}
+    assert bfs(graph, 'A', 'C') is None
 ```
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Feel free to add tests, documentation, or improve the template structure.
 
 ## License
 
@@ -213,6 +163,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - ADVIKBAHADUR
 
-## Acknowledgments
+## Notes
 
-This package implements classical algorithms from computer science and artificial intelligence literature.
+- This is a template package with stub implementations
+- All functions are marked with `# TODO:` comments
+- Implement the algorithms yourself to learn the concepts
+- The package structure allows for easy testing and distribution once implemented

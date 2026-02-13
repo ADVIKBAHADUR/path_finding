@@ -1,11 +1,15 @@
 """
 Path Finding Algorithms Package
 
-This package provides implementations of various path-finding and decision-making algorithms:
+This package provides a template for implementing various path-finding and 
+decision-making algorithms:
 - BFS (Breadth-First Search)
 - DFS (Depth-First Search)
 - A* (A-Star)
 - MDP (Markov Decision Process)
+
+Note: This is a template package. Algorithm implementations are stubs that 
+need to be completed.
 
 Usage:
     from path_finding import bfs, dfs, astar
