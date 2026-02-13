@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "path_finding"
+version = "0.1.0"
+description = "Implementation of various path-finding and decision-making algorithms"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {file = "LICENSE"}
+keywords = ["pathfinding", "algorithms", "bfs", "dfs", "astar", "mdp"]
+authors = [
+    {name = "ADVIKBAHADUR"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "numpy>=1.19.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/ADVIKBAHADUR/path_finding"
+"Bug Reports" = "https://github.com/ADVIKBAHADUR/path_finding/issues"
+"Source" = "https://github.com/ADVIKBAHADUR/path_finding"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+path_finding = ["py.typed"]
