@@ -11,6 +11,86 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 
+
+# ---------------------------------------------------------------------------
+# Metric helpers
+# ---------------------------------------------------------------------------
+
+def compute_turn_count(path):
+    """Count direction changes in a path (list of [row, col])."""
+    if not path or len(path) < 3:
+        return 0
+    turns = 0
+    for i in range(1, len(path) - 1):
+        dr1 = path[i][0] - path[i - 1][0]
+        dc1 = path[i][1] - path[i - 1][1]
+        dr2 = path[i + 1][0] - path[i][0]
+        dc2 = path[i + 1][1] - path[i][1]
+        if (dr1, dc1) != (dr2, dc2):
+            turns += 1
+    return turns
+
+
+def safe_div(numerator, denominator, default='N/A'):
+    """Division that returns default instead of ZeroDivisionError."""
+    if denominator is None or denominator == 0:
+        return default
+    return numerator / denominator
+
+
+def compute_metrics(result, free_cells, optimal_path_length):
+    """
+    Derive all benchmark metrics from a raw algorithm result dict.
+
+    Parameters
+    ----------
+    result : dict  – raw response from window.lastPythonResult
+    free_cells : int – passable cells in the maze (total - walls)
+    optimal_path_length : int | None – BFS path length for this maze
+
+    Returns
+    -------
+    dict of all metrics (ready to drop straight into the CSV row)
+    """
+    path = result.get('path', [])
+    visited_nodes = result.get('visited_nodes', [])
+    t = result.get('time', 0)
+    success = bool(path)
+
+    path_length   = len(path)
+    visited_count = len(visited_nodes)
+    turn_count    = compute_turn_count(path)
+
+    # ------------------------------------------------------------------
+    # Search efficiency
+    # ------------------------------------------------------------------
+    search_coverage       = safe_div(visited_count, free_cells)
+    search_eff_ratio      = safe_div(path_length, visited_count)   # higher = less wasted work
+    time_per_node         = safe_div(t, visited_count)
+
+    # ------------------------------------------------------------------
+    # Path quality (relative to BFS optimal)
+    # ------------------------------------------------------------------
+    if success and optimal_path_length and optimal_path_length > 0:
+        optimality_ratio = path_length / optimal_path_length
+        suboptimality    = (path_length - optimal_path_length) / optimal_path_length
+    else:
+        optimality_ratio = 'N/A'
+        suboptimality    = 'N/A'
+
+    return {
+        'success':            1 if success else 0,
+        'time':               t,
+        'visited_nodes':      visited_count,
+        'path_length':        path_length,
+        'turn_count':         turn_count,
+        'search_coverage':    search_coverage,
+        'search_eff_ratio':   search_eff_ratio,
+        'time_per_node':      time_per_node,
+        'optimality_ratio':   optimality_ratio,
+        'suboptimality':      suboptimality,
+    }
+
 # Configuration
 DEBUG_MODE = False  # Run full benchmark
 FRONTEND_PORT = 8000
@@ -120,9 +200,20 @@ try:
     """)
 
     # Prepare CSV
+    CSV_COLUMNS = [
+        # ── maze context ──────────────────────────────────────────────
+        'RunID', 'Size', 'WallDensity', 'FreeCells', 'ManhattanDist', 'OptimalPathLength',
+        # ── per-algorithm ─────────────────────────────────────────────
+        'Algorithm', 'Success',
+        'Time(s)', 'VisitedNodes', 'PathLength', 'TurnCount',
+        # ── search efficiency ─────────────────────────────────────────
+        'SearchCoverage', 'SearchEffRatio', 'TimePerNode',
+        # ── path quality ──────────────────────────────────────────────
+        'PathOptimalityRatio', 'Suboptimality',
+    ]
     with open(RESULTS_FILE, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['RunID', 'Size', 'Algorithm', 'Time(s)', 'VisitedNodes', 'PathLength'])
+        writer.writerow(CSV_COLUMNS)
 
     benchmark_configs = [
         {'size': 20, 'count': 10},
@@ -130,11 +221,12 @@ try:
     ]
     
     # Python Algorithms mapping in select
-    # 6: DFS, 7: BFS, 8: A*
+    # 6: DFS, 7: BFS, 8: A* h1 (Manhattan), 9: A* h2 (Corridor-Aware)
     algorithms = [
-        {'name': 'DFS', 'value': '6'},
-        {'name': 'BFS', 'value': '7'},
-        {'name': 'AStar', 'value': '8'}
+        {'name': 'DFS',       'value': '6'},
+        {'name': 'BFS',       'value': '7'},
+        {'name': 'AStar_h1',  'value': '8'},
+        {'name': 'AStar_h2',  'value': '9'},
     ]
 
     run_id = 0
@@ -160,9 +252,9 @@ try:
             run_id += 1
             print(f"  Run {i+1}/{count} (Total ID: {run_id})")
 
-            # Use maze_generators() via the select, which calls hidden_clear() first.
-            # hidden_clear() destroys and rebuilds the entire DOM table, giving a
-            # 100% clean visual slate with no leftover cell_algo/cell_path classes.
+            # ------------------------------------------------------------------
+            # Generate a fresh maze
+            # ------------------------------------------------------------------
             print("    Generating maze...")
             driver.execute_script("""
                 document.querySelector('#slct_2').value = '1';
@@ -174,68 +266,116 @@ try:
                 lambda d: d.execute_script("return generating === false")
             )
 
-            wall_count = driver.execute_script("return document.querySelectorAll('.cell_wall').length")
-            # total_cells = driver.execute_script("return document.querySelectorAll('.cell').length")
-            # print(f"    [DEBUG] Walls: {wall_count}, Total Cells: {total_cells}")
-            
-            # For each solver
+            # ------------------------------------------------------------------
+            # Extract maze context metrics from the DOM / JS state
+            # ------------------------------------------------------------------
+            maze_info = driver.execute_script("""
+                var total  = document.querySelectorAll('.cell').length;
+                var walls  = document.querySelectorAll('.cell_wall').length;
+                var free   = total - walls;
+                var sp     = (typeof start_pos  !== 'undefined') ? start_pos  : [0, 0];
+                var tp     = (typeof target_pos !== 'undefined') ? target_pos : [0, 0];
+                var manhattan = Math.abs(sp[0] - tp[0]) + Math.abs(sp[1] - tp[1]);
+                return {
+                    total_cells:  total,
+                    wall_cells:   walls,
+                    free_cells:   free,
+                    wall_density: total > 0 ? walls / total : 0,
+                    manhattan:    manhattan
+                };
+            """)
+            total_cells  = maze_info['total_cells']
+            wall_cells   = maze_info['wall_cells']
+            free_cells   = maze_info['free_cells']
+            wall_density = maze_info['wall_density']
+            manhattan    = maze_info['manhattan']
+            print(f"    Maze info: {total_cells} cells, {wall_cells} walls "
+                  f"(density={wall_density:.2f}), manhattan={manhattan}")
+
+            # ------------------------------------------------------------------
+            # Run every algorithm on the same maze; collect raw results first
+            # ------------------------------------------------------------------
+            raw_results = {}   # algo_name → raw result dict from backend
+
             for algo in algorithms:
                 algo_name = algo['name']
-                algo_val = algo['value']
+                algo_val  = algo['value']
 
-                # Select Algorithm
                 driver.execute_script(f"document.querySelector('#slct_1').value = '{algo_val}';")
-
-                # Reset both flags before each run
                 driver.execute_script("window.lastPythonResult = null; window.animation_complete = false;")
-
-                # Trigger Solve (play button calls clear_grid + maze_solvers internally)
                 driver.find_element(By.ID, "play").click()
 
-                # Step 1: wait for Python backend to return a result
+                # Wait for Python backend result
                 try:
                     WebDriverWait(driver, 15).until(
                         lambda d: d.execute_script("return window.lastPythonResult !== null")
                     )
                 except Exception:
                     print(f"    Timeout waiting for Python result for {algo_name}")
+                    raw_results[algo_name] = None
                     continue
 
-                # Retrieve metrics immediately (Python exec time is in the result)
                 result = driver.execute_script("return window.lastPythonResult;")
 
-                # Step 2: wait for the patched interval to signal it has fully drawn everything
+                # Wait for animation to finish
                 try:
                     WebDriverWait(driver, 30).until(
                         lambda d: d.execute_script("return window.animation_complete === true")
                     )
                 except Exception:
-                    print(f"    Warning: animation_complete timeout for {algo_name}, screenshotting anyway")
+                    print(f"    Warning: animation_complete timeout for {algo_name}")
 
-                # One frame buffer for final repaint
-                time.sleep(0.1) 
-                
-                metrics = {
-                    'time': result.get('time', 0),
-                    'visited': len(result.get('visited_nodes', [])),
-                    'path': len(result.get('path', []))
+                time.sleep(0.1)  # one frame buffer for final repaint
 
-                }
-                
-                print(f"    {algo_name}: {metrics}")
-                
-                # Save to CSV
-                with open(RESULTS_FILE, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow([run_id, size, algo_name, metrics['time'], metrics['visited'], metrics['path']])
-                
+                raw_results[algo_name] = result
+
                 # Screenshot
                 screenshot_path = os.path.join(IMAGES_DIR, f"run_{run_id}_{size}_{algo_name}.png")
                 driver.save_screenshot(screenshot_path)
-            
+
+            # ------------------------------------------------------------------
+            # BFS gives the ground-truth optimal path length for this maze
+            # ------------------------------------------------------------------
+            bfs_raw = raw_results.get('BFS')
+            if bfs_raw and bfs_raw.get('path'):
+                optimal_path_length = len(bfs_raw['path'])
+            else:
+                optimal_path_length = None   # unsolvable maze or BFS failed
+
+            # ------------------------------------------------------------------
+            # Compute all metrics and write one CSV row per algorithm
+            # ------------------------------------------------------------------
+            with open(RESULTS_FILE, 'a', newline='') as f:
+                writer = csv.writer(f)
+                for algo in algorithms:
+                    algo_name = algo['name']
+                    raw = raw_results.get(algo_name)
+                    if raw is None:
+                        continue   # timed-out run; skip
+
+                    m = compute_metrics(raw, free_cells, optimal_path_length)
+                    print(f"    {algo_name}: success={m['success']}  "
+                          f"t={m['time']:.5f}s  visited={m['visited_nodes']}  "
+                          f"path={m['path_length']}  turns={m['turn_count']}  "
+                          f"coverage={m['search_coverage']:.3f}  "
+                          f"optRatio={m['optimality_ratio']}")
+
+                    writer.writerow([
+                        run_id, size,
+                        f"{wall_density:.4f}", free_cells, manhattan, optimal_path_length if optimal_path_length else 'N/A',
+                        algo_name, m['success'],
+                        m['time'], m['visited_nodes'], m['path_length'], m['turn_count'],
+                        f"{m['search_coverage']:.6f}"  if isinstance(m['search_coverage'],  float) else m['search_coverage'],
+                        f"{m['search_eff_ratio']:.6f}" if isinstance(m['search_eff_ratio'],  float) else m['search_eff_ratio'],
+                        f"{m['time_per_node']:.8f}"    if isinstance(m['time_per_node'],     float) else m['time_per_node'],
+                        f"{m['optimality_ratio']:.6f}" if isinstance(m['optimality_ratio'],  float) else m['optimality_ratio'],
+                        f"{m['suboptimality']:.6f}"    if isinstance(m['suboptimality'],     float) else m['suboptimality'],
+                    ])
+
             if DEBUG_MODE:
                 print("[DEBUG] Stopping after 1 maze. Press Enter to clean up and exit...")
                 pass
+
 
 finally:
     print("Cleaning up...")
