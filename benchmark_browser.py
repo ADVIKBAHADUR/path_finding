@@ -69,65 +69,54 @@ try:
         EC.presence_of_element_located((By.ID, "slct_1")) # Algo selector
     )
     
-    # FORCE visualizer fix: Override hidden_clear to ALWAYS generate grid regardless of window size
+    # Fix 1: override hidden_clear to always regenerate grid regardless of window size check
+    # Fix 2: patch maze_solvers_interval to set window.animation_complete when fully done
     driver.execute_script("""
         window.hidden_clear = function() {
             for (let i = 0; i < timeouts.length; i++)
                 clearTimeout(timeouts[i]);
-
             timeouts = [];
             clearInterval(my_interval);
             delete_grid();
-            
-            // ALWAYS generate grid, ignore window width check
             init_css_properties_before();
             generate_grid();
             init_css_properties_after();
             visualizer_event_listeners();
         };
 
-        window.instant_render = function() {
-            // Stop any existing intervals
-            if (typeof my_interval !== 'undefined' && my_interval) clearInterval(my_interval);
-            if (typeof timeouts !== 'undefined') {
-                for(let t of timeouts) clearTimeout(t);
-                timeouts = [];
-            }
-            
-            // Draw Visited
-            if (typeof node_list !== 'undefined') {
-                for (let i = 0; i < node_list.length; i++) {
-                    let node = node_list[i];
-                    place_to_cell(node[0], node[1]).classList.add("cell_algo");
-                }
-            }
-            
-            // Draw Path
-            if (typeof path_list !== 'undefined') {
-                for (let i = 0; i < path_list.length; i++) {
-                    let path_node = path_list[i];
-                    place_to_cell(path_node[0], path_node[1]).classList.remove("cell_algo");
-                    place_to_cell(path_node[0], path_node[1]).classList.add("cell_path");
-                }
-            }
-            
-            // Mark start/target explicitly to be safe
-            if (typeof start_pos !== 'undefined') place_to_cell(start_pos[0], start_pos[1]).classList.add("start");
-            if (typeof target_pos !== 'undefined') place_to_cell(target_pos[0], target_pos[1]).classList.add("target");
-
-            window.rendering_complete = true;
-        };
-
-        // Override the interval function to just call instant_render
+        // Patch the global maze_solvers_interval so we get a reliable completion signal.
+        // The original is defined at global scope so assigning here overrides it.
+        window.animation_complete = false;
         window.maze_solvers_interval = function() {
-            window.rendering_complete = false;
-            // Delay slightly to ensure browser paints invalidation? No, just run.
-            setTimeout(window.instant_render, 0);
+            my_interval = window.setInterval(function() {
+                if (!path) {
+                    if (node_list_index >= node_list.length) {
+                        if (!found) {
+                            clearInterval(my_interval);
+                            window.animation_complete = true;  // no-path end
+                            return;
+                        }
+                        path = true;
+                        place_to_cell(start_pos[0], start_pos[1]).classList.add('cell_path');
+                        return;
+                    }
+                    let node = node_list[node_list_index];
+                    place_to_cell(node[0], node[1]).classList.add('cell_algo');
+                    node_list_index++;
+                } else {
+                    if (path_list_index >= path_list.length) {
+                        place_to_cell(target_pos[0], target_pos[1]).classList.add('cell_path');
+                        clearInterval(my_interval);
+                        window.animation_complete = true;  // path-found end
+                        return;
+                    }
+                    let path_node = path_list[path_list_index];
+                    place_to_cell(path_node[0], path_node[1]).classList.remove('cell_algo');
+                    place_to_cell(path_node[0], path_node[1]).classList.add('cell_path');
+                    path_list_index++;
+                }
+            }, 10);
         };
-        
-        // Also speed up generation if possible? 
-        // We can override random_int or similar but user liked the look.
-        // We will just wait.
     """)
 
     # Prepare CSV
@@ -156,138 +145,75 @@ try:
         
         print(f"Starting benchmark for Size {size}x{size}...")
         
-        # Resize Grid
+        # Set grid size for this batch
         driver.execute_script(f"""
             window.MAZE_CONFIG = window.MAZE_CONFIG || {{}};
             window.MAZE_CONFIG.grid = window.MAZE_CONFIG.grid || {{}};
             window.MAZE_CONFIG.grid.width = {size};
             window.MAZE_CONFIG.grid.height = {size};
             window.MAZE_CONFIG.grid.mode = 'fixed';
-            
-            // Ensure clean state before generation
-            // Remove ALL tables to be safe
-            var tables = document.querySelectorAll("#my_table");
-            tables.forEach(t => t.remove());
-            
-            // Override delete_grid to be safe just in case hidden_clear calls it
-            window.delete_grid = function() {{
-                var t = document.querySelector("#my_table");
-                if (t) t.remove();
-            }};
-
-            // Now call hidden_clear which will generate a NEW single grid
-            hidden_clear(); 
+            hidden_clear();
         """)
-        time.sleep(1) # Allow DOM update
+        time.sleep(0.5)
 
         for i in range(count):
             run_id += 1
             print(f"  Run {i+1}/{count} (Total ID: {run_id})")
-            
-            # Generate Maze (Direct Call to avoid UI issues)
-            # 'randomized_depth_first' corresponds to value '1'
-            print("    Generating maze via JS direct call...")
-            try:
-                driver.execute_script("""
-                    if (typeof randomized_depth_first === 'function') {
-                        document.querySelector('#slct_2').value = '1';
-                        randomized_depth_first();
-                    } else {
-                        console.error("randomized_depth_first is not defined!");
-                        // Fallback to dispatch event incase it's scoped?
-                        document.querySelector('#slct_2').value = '1';
-                        document.querySelector('#slct_2').dispatchEvent(new Event('change'));
-                    }
-                """)
-            except Exception as e:
-                 print(f"Error executing generation script: {e}")
-            
-            # Wait for generation to likely complete (it's synchronous usually, but good to wait)
-            time.sleep(1)
 
-            print("    Waiting for any async generation flags...")
-            try:
-                # Wait for generating flag AND verify walls > 0
-                WebDriverWait(driver, 15).until(
-                    lambda d: d.execute_script("return typeof generating !== 'undefined' && generating === false")
-                )
-                
-                # Check actual wall population
-                start_w = time.time()
-                current_walls = 0
-                while time.time() - start_w < 5:
-                    current_walls = driver.execute_script("return document.querySelectorAll('.cell_wall').length")
-                    if current_walls > 10: # Arbitrary threshold ensuring some walls exist
-                         break
-                    time.sleep(0.5)
-                
-                if current_walls == 0:
-                     print("    ERROR: Generation finished but NO walls found! Retrying selection...")
-                     # Retry selection forcefully
-                     driver.execute_script("document.querySelector('#slct_2').value = '1';")
-                     driver.execute_script("document.querySelector('#slct_2').dispatchEvent(new Event('change'));")
-                     time.sleep(3)
-                     
-            except Exception as e:
-                print(f"    WARNING: Generation timeout or error: {e}")
-                driver.execute_script("generating = false;")
-            
-            time.sleep(2)
+            # Use maze_generators() via the select, which calls hidden_clear() first.
+            # hidden_clear() destroys and rebuilds the entire DOM table, giving a
+            # 100% clean visual slate with no leftover cell_algo/cell_path classes.
+            print("    Generating maze...")
+            driver.execute_script("""
+                document.querySelector('#slct_2').value = '1';
+                maze_generators();
+            """)
+
+            # randomized_depth_first is synchronous; generating=false is set at its end.
+            WebDriverWait(driver, 10).until(
+                lambda d: d.execute_script("return generating === false")
+            )
 
             wall_count = driver.execute_script("return document.querySelectorAll('.cell_wall').length")
             # total_cells = driver.execute_script("return document.querySelectorAll('.cell').length")
             # print(f"    [DEBUG] Walls: {wall_count}, Total Cells: {total_cells}")
             
-            # Disable animations globally but PRESERVE original styling (images/colors)
-            # We ONLY want to kill the transition time so screenshots are instant.
-            driver.execute_script("""
-                var style = document.createElement('style');
-                style.innerHTML = `
-                    .cell_algo { 
-                        animation: none !important; 
-                        transition: none !important; 
-                        /* Do NOT override background-image or color - let CSS handle the dots */
-                    }
-                    .cell_path { 
-                        animation: none !important; 
-                        transition: none !important; 
-                    }
-                    .visited_cell {
-                        animation: none !important;
-                        transition: none !important;
-                    }
-                `;
-                document.head.appendChild(style);
-            """)
-
             # For each solver
             for algo in algorithms:
                 algo_name = algo['name']
                 algo_val = algo['value']
-                
+
                 # Select Algorithm
                 driver.execute_script(f"document.querySelector('#slct_1').value = '{algo_val}';")
-                
-                # Reset flags
-                driver.execute_script("window.rendering_complete = false; window.lastPythonResult = null;")
-                
-                # Trigger Solve
+
+                # Reset both flags before each run
+                driver.execute_script("window.lastPythonResult = null; window.animation_complete = false;")
+
+                # Trigger Solve (play button calls clear_grid + maze_solvers internally)
                 driver.find_element(By.ID, "play").click()
-                
-                # Wait for Python Result
+
+                # Step 1: wait for Python backend to return a result
                 try:
-                    WebDriverWait(driver, 10).until(
-                        lambda d: d.execute_script("return window.lastPythonResult && window.rendering_complete")
+                    WebDriverWait(driver, 15).until(
+                        lambda d: d.execute_script("return window.lastPythonResult !== null")
                     )
-                except Exception as e:
-                    print(f"    Timeout waiting for {algo_name}")
+                except Exception:
+                    print(f"    Timeout waiting for Python result for {algo_name}")
                     continue
-                
-                # Retrieve Metrics from Window object
+
+                # Retrieve metrics immediately (Python exec time is in the result)
                 result = driver.execute_script("return window.lastPythonResult;")
-                
-                # Wait for render to stick (reduced since we disabled animations)
-                time.sleep(0.5) 
+
+                # Step 2: wait for the patched interval to signal it has fully drawn everything
+                try:
+                    WebDriverWait(driver, 30).until(
+                        lambda d: d.execute_script("return window.animation_complete === true")
+                    )
+                except Exception:
+                    print(f"    Warning: animation_complete timeout for {algo_name}, screenshotting anyway")
+
+                # One frame buffer for final repaint
+                time.sleep(0.1) 
                 
                 metrics = {
                     'time': result.get('time', 0),
