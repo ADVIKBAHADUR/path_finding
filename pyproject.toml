@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "path_finding"
+version = "0.1.0"
+description = "Pathfinding algorithms for maze solving (BFS, DFS, A*)"
+authors = [
+    {name = "Advik"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["path_finding*"]
+exclude = ["submodules*"]

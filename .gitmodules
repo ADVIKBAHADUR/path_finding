@@ -1,0 +1,4 @@
+[submodule "submodules/Maze_solver_py"]
+	path = submodules/Maze_solver_py
+	url = https://github.com/ADVIKBAHADUR/Maze_solver_py.git
+	branch = my_own_implementations
