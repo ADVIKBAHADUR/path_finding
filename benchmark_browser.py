@@ -232,7 +232,7 @@ try:
     # Prepare CSV
     CSV_COLUMNS = [
         # ── maze context ──────────────────────────────────────────────
-        'RunID', 'Size', 'WallDensity', 'FreeCells', 'ManhattanDist', 'OptimalPathLength',
+        'RunID', 'Size', 'PathCount', 'WallDensity', 'FreeCells', 'ManhattanDist', 'AStarH1PathLength',
         # ── per-algorithm ─────────────────────────────────────────────
         'Algorithm', 'Success',
         'Time(s)', 'VisitedNodes', 'PathLength', 'TurnCount',
@@ -248,11 +248,15 @@ try:
         writer = csv.writer(f)
         writer.writerow(CSV_COLUMNS)
 
+    # Each config: size × path_counts × count_per mazes
+    # path_count=0 → unsolvable (start walled off)
+    # path_count=1 → perfect maze (one unique solution)
+    # path_count>1 → N-1 extra wall holes punched = ≈N alternative routes
     benchmark_configs = [
-        {'size': 20, 'count': 10},
-        {'size': 50, 'count': 10} 
+        {'size': 20, 'path_counts': [0, 1, 2, 5, 10], 'count_per': 3},
+        {'size': 50, 'path_counts': [0, 1, 2, 5, 10], 'count_per': 3},
     ]
-    
+
     # Python Algorithms mapping in select
     # 1: DFS, 2: BFS, 3: A* h1 (Manhattan), 4: A* h2 (Corridor-Aware)
     # 5: MDP Value Iteration, 6: MDP Policy Iteration
@@ -268,12 +272,13 @@ try:
     run_id = 0
 
     for config in benchmark_configs:
-        size = config['size']
-        count = config['count']
-        
+        size         = config['size']
+        path_counts  = config['path_counts']
+        count_per    = config['count_per']
+
         print(f"Starting benchmark for Size {size}x{size}...")
-        
-        # Set grid size for this batch
+
+        # Set grid size for this batch (done once per size)
         driver.execute_script(f"""
             window.MAZE_CONFIG = window.MAZE_CONFIG || {{}};
             window.MAZE_CONFIG.grid = window.MAZE_CONFIG.grid || {{}};
@@ -284,18 +289,22 @@ try:
         """)
         time.sleep(0.5)
 
-        for i in range(count):
+        for path_count in path_counts:
+          for i in range(count_per):
             run_id += 1
-            print(f"  Run {i+1}/{count} (Total ID: {run_id})")
+            print(f"  PathCount={path_count}  Rep {i+1}/{count_per}  (RunID {run_id})")
 
             # ------------------------------------------------------------------
-            # Generate a fresh maze
+            # Generate a fresh maze with the requested path-count setting
             # ------------------------------------------------------------------
             print("    Generating maze...")
-            driver.execute_script("""
+            driver.execute_script(f"""
+                window.TARGET_PATH_COUNT = {path_count};
                 document.querySelector('#slct_2').value = '1';
                 maze_generators();
             """)
+            # Restore default after generation so the UI isn't affected
+            driver.execute_script("window.TARGET_PATH_COUNT = 1;")
 
             # randomized_depth_first is synchronous; generating=false is set at its end.
             WebDriverWait(driver, 10).until(
@@ -366,17 +375,48 @@ try:
                 raw_results[algo_name] = result
 
                 # Screenshot
-                screenshot_path = os.path.join(IMAGES_DIR, f"run_{run_id}_{size}_{algo_name}.png")
+                screenshot_path = os.path.join(IMAGES_DIR, f"run_{run_id}_{size}_pc{path_count}_{algo_name}.png")
                 driver.save_screenshot(screenshot_path)
 
             # ------------------------------------------------------------------
-            # BFS gives the ground-truth optimal path length for this maze
+            # Overlay screenshot: all 6 paths on one grid, no exploration dots
             # ------------------------------------------------------------------
-            bfs_raw = raw_results.get('BFS')
-            if bfs_raw and bfs_raw.get('path'):
-                optimal_path_length = len(bfs_raw['path'])
+            try:
+                import json as _json
+                js_paths = {}
+                for algo in algorithms:
+                    r = raw_results.get(algo['name'])
+                    if r and r.get('path'):
+                        js_paths[algo['name']] = r['path']
+
+                driver.execute_script(f"""
+                    var pathsData = {_json.dumps(js_paths)};
+                    var resultsMap = {{}};
+                    for (var k in pathsData) {{
+                        resultsMap[k] = {{ path: pathsData[k] }};
+                    }}
+                    if (typeof show_overlay === 'function') {{
+                        show_overlay(resultsMap);
+                    }}
+                """)
+                time.sleep(0.4)  # let gradient repaint settle
+                overlay_path = os.path.join(IMAGES_DIR, f"run_{run_id}_{size}_pc{path_count}_OVERLAY.png")
+                driver.save_screenshot(overlay_path)
+                driver.execute_script("""
+                    if (typeof clear_overlay === 'function') clear_overlay();
+                """)
+            except Exception as e:
+                print(f"    Warning: overlay screenshot failed: {e}")
+
+            # ------------------------------------------------------------------
+            # A* h1 (admissible Manhattan heuristic) gives the ground-truth
+            # optimal path length.  Guaranteed-shortest on uniform-cost grids.
+            # ------------------------------------------------------------------
+            astar_h1_raw = raw_results.get('AStar_h1')
+            if astar_h1_raw and astar_h1_raw.get('path'):
+                optimal_path_length = len(astar_h1_raw['path'])
             else:
-                optimal_path_length = None   # unsolvable maze or BFS failed
+                optimal_path_length = None   # unsolvable maze or A*h1 failed
 
             # ------------------------------------------------------------------
             # Compute all metrics and write one CSV row per algorithm
@@ -397,7 +437,7 @@ try:
                           f"optRatio={m['optimality_ratio']}")
 
                     writer.writerow([
-                        run_id, size,
+                        run_id, size, path_count,
                         f"{wall_density:.4f}", free_cells, manhattan, optimal_path_length if optimal_path_length else 'N/A',
                         algo_name, m['success'],
                         m['time'], m['visited_nodes'], m['path_length'], m['turn_count'],
