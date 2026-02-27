@@ -42,6 +42,10 @@ def compute_metrics(result, free_cells, optimal_path_length):
     """
     Derive all benchmark metrics from a raw algorithm result dict.
 
+    Works for both search algorithms (BFS/DFS/A*) and MDP algorithms.
+    MDP-specific fields (planning_iters, planning_time, etc.) are 'N/A'
+    for search algorithms and populated from the result for MDP ones.
+
     Parameters
     ----------
     result : dict  – raw response from window.lastPythonResult
@@ -52,21 +56,25 @@ def compute_metrics(result, free_cells, optimal_path_length):
     -------
     dict of all metrics (ready to drop straight into the CSV row)
     """
-    path = result.get('path', [])
+    path          = result.get('path', [])
     visited_nodes = result.get('visited_nodes', [])
-    t = result.get('time', 0)
-    success = bool(path)
+    t             = result.get('time', 0)
+    success       = bool(path)
 
     path_length   = len(path)
-    visited_count = len(visited_nodes)
     turn_count    = compute_turn_count(path)
 
+    # For MDP the meaningful "nodes expanded" is states_valued (every cell
+    # that participated in the Bellman sweep).  For search it is visited_nodes.
+    states_valued = result.get('states_valued', None)
+    visited_count = states_valued if states_valued is not None else len(visited_nodes)
+
     # ------------------------------------------------------------------
-    # Search efficiency
+    # Search / planning efficiency
     # ------------------------------------------------------------------
-    search_coverage       = safe_div(visited_count, free_cells)
-    search_eff_ratio      = safe_div(path_length, visited_count)   # higher = less wasted work
-    time_per_node         = safe_div(t, visited_count)
+    search_coverage  = safe_div(visited_count, free_cells)
+    search_eff_ratio = safe_div(path_length, visited_count)   # higher = less wasted work
+    time_per_node    = safe_div(t, visited_count)
 
     # ------------------------------------------------------------------
     # Path quality (relative to BFS optimal)
@@ -78,17 +86,39 @@ def compute_metrics(result, free_cells, optimal_path_length):
         optimality_ratio = 'N/A'
         suboptimality    = 'N/A'
 
+    # ------------------------------------------------------------------
+    # MDP-specific metrics (N/A for search algorithms)
+    # ------------------------------------------------------------------
+    def _fmt(key, fmt=None):
+        v = result.get(key)
+        if v is None:
+            return 'N/A'
+        return f'{v:{fmt}}' if fmt else v
+
+    planning_iters   = _fmt('planning_iters')
+    planning_time    = _fmt('planning_time',  '.8f')
+    extraction_time  = _fmt('extraction_time','.8f')
+    cum_reward       = _fmt('cumulative_reward', '.4f')
+    disc_return      = _fmt('discounted_return', '.4f')
+
     return {
-        'success':            1 if success else 0,
-        'time':               t,
-        'visited_nodes':      visited_count,
-        'path_length':        path_length,
-        'turn_count':         turn_count,
-        'search_coverage':    search_coverage,
-        'search_eff_ratio':   search_eff_ratio,
-        'time_per_node':      time_per_node,
-        'optimality_ratio':   optimality_ratio,
-        'suboptimality':      suboptimality,
+        'success':           1 if success else 0,
+        'time':              t,
+        'visited_nodes':     visited_count,
+        'path_length':       path_length,
+        'turn_count':        turn_count,
+        'search_coverage':   search_coverage,
+        'search_eff_ratio':  search_eff_ratio,
+        'time_per_node':     time_per_node,
+        'optimality_ratio':  optimality_ratio,
+        'suboptimality':     suboptimality,
+        # MDP-only
+        'planning_iters':    planning_iters,
+        'planning_time':     planning_time,
+        'extraction_time':   extraction_time,
+        'cumulative_reward': cum_reward,
+        'discounted_return': disc_return,
+        'states_valued':     states_valued if states_valued is not None else 'N/A',
     }
 
 # Configuration
@@ -206,10 +236,13 @@ try:
         # ── per-algorithm ─────────────────────────────────────────────
         'Algorithm', 'Success',
         'Time(s)', 'VisitedNodes', 'PathLength', 'TurnCount',
-        # ── search efficiency ─────────────────────────────────────────
+        # ── search / planning efficiency ──────────────────────────────
         'SearchCoverage', 'SearchEffRatio', 'TimePerNode',
         # ── path quality ──────────────────────────────────────────────
         'PathOptimalityRatio', 'Suboptimality',
+        # ── MDP-specific (N/A for search algorithms) ──────────────────
+        'PlanningIters', 'PlanningTime(s)', 'ExtractionTime(s)',
+        'CumulativeReward', 'DiscountedReturn', 'StatesValued',
     ]
     with open(RESULTS_FILE, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -221,12 +254,15 @@ try:
     ]
     
     # Python Algorithms mapping in select
-    # 6: DFS, 7: BFS, 8: A* h1 (Manhattan), 9: A* h2 (Corridor-Aware)
+    # 1: DFS, 2: BFS, 3: A* h1 (Manhattan), 4: A* h2 (Corridor-Aware)
+    # 5: MDP Value Iteration, 6: MDP Policy Iteration
     algorithms = [
-        {'name': 'DFS',       'value': '6'},
-        {'name': 'BFS',       'value': '7'},
-        {'name': 'AStar_h1',  'value': '8'},
-        {'name': 'AStar_h2',  'value': '9'},
+        {'name': 'DFS',       'value': '1'},
+        {'name': 'BFS',       'value': '2'},
+        {'name': 'AStar_h1',  'value': '3'},
+        {'name': 'AStar_h2',  'value': '4'},
+        {'name': 'MDP_VI',    'value': '5'},
+        {'name': 'MDP_PI',    'value': '6'},
     ]
 
     run_id = 0
@@ -370,6 +406,13 @@ try:
                         f"{m['time_per_node']:.8f}"    if isinstance(m['time_per_node'],     float) else m['time_per_node'],
                         f"{m['optimality_ratio']:.6f}" if isinstance(m['optimality_ratio'],  float) else m['optimality_ratio'],
                         f"{m['suboptimality']:.6f}"    if isinstance(m['suboptimality'],     float) else m['suboptimality'],
+                        # MDP-specific columns
+                        m['planning_iters'],
+                        m['planning_time'],
+                        m['extraction_time'],
+                        m['cumulative_reward'],
+                        m['discounted_return'],
+                        m['states_valued'],
                     ])
 
             if DEBUG_MODE:

@@ -1,259 +1,21 @@
 """
 MDP (Markov Decision Process) pathfinding solver.
+Provides two algorithms that share the same external API as BFS/DFS/A*:
 
-=======================================================================
-OVERVIEW
-=======================================================================
-Unlike BFS / DFS / A*, an MDP does NOT search from start to goal.
-Instead it computes a VALUE for every free cell in the maze and derives
-a POLICY (best action at every cell).  The path is then extracted by
-following the greedy policy from start until the goal is reached.
+  mdp_value_iteration(maze, start, end, return_trace, ...)
+  mdp_policy_iteration(maze, start, end, return_trace, ...)
 
-This lets us:
-  - Handle stochastic transitions (e.g. 80% chance you move where you
-    intended, 10% you slip sideways each way)
-  - Tune risk-aversion vs speed via the discount factor γ
-  - Compare planning time vs search-based algorithms in benchmarks
-
-=======================================================================
-CORE CONCEPTS YOU NEED TO IMPLEMENT
-=======================================================================
-
-1. STATE SPACE  ─────────────────────────────────────────────────────
-   Every passable cell (maze[r][c] == 0) is a state.
-   Wall cells are NOT states – they are obstacles.
-   The goal cell is a TERMINAL state (no further transitions).
-
-   State representation: tuple (row, col)
-   Full state space: {(r, c) for r in range(rows)
-                              for c in range(cols)
-                              if maze[r][c] == 0}
-
-2. ACTIONS  ──────────────────────────────────────────────────────────
-   Four cardinal moves: UP, DOWN, LEFT, RIGHT
-   Represented as (Δrow, Δcol) offsets, e.g. UP = (-1, 0)
-
-   ACTIONS = {
-       'UP':    (-1,  0),
-       'DOWN':  ( 1,  0),
-       'LEFT':  ( 0, -1),
-       'RIGHT': ( 0,  1),
-   }
-
-   An action is INVALID at a state if the resulting cell is a wall or
-   out of bounds → the agent stays in place (or you can simply exclude
-   invalid moves).
-
-3. TRANSITION MODEL  ────────────────────────────────────────────────
-   Deterministic version (simple):
-     T(s, a, s') = 1.0  if s' is the cell reached by taking a from s
-                   0.0  otherwise
-
-   Stochastic version (more interesting / realistic):
-     When the agent intends to move in direction a, there is noise:
-       - With probability p_intended  → move in direction a
-       - With probability p_sideways  → slip 90° left of a  (each)
-       - With probability p_back      → slip backward
-
-     Example (classic gridworld):  p_intended=0.8, p_sideways=0.1 each
-     These must sum to 1.0.
-
-   Signature you need to implement:
-     def get_transitions(state, action, maze):
-         \"\"\"
-         Returns a list of (probability, next_state) pairs.
-
-         Parameters
-         ----------
-         state  : tuple (row, col)  – current cell
-         action : tuple (dr, dc)    – intended move direction
-         maze   : 2D list           – 0=free, 1=wall
-
-         Returns
-         -------
-         list of (float, tuple)     – [(prob, next_state), ...]
-                                      probabilities must sum to 1.0
-                                      next_state == state if move hits wall
-         \"\"\"
-         # TODO
-
-4. REWARD FUNCTION  ─────────────────────────────────────────────────
-   R(s, a, s') → scalar reward received after taking action a in state s
-   and landing in s'.
-
-   Design choices (you pick the values):
-     - GOAL_REWARD   : large positive number, e.g. +100.0
-     - STEP_COST     : small negative number, e.g. -1.0
-                       (penalises long paths, encourages efficiency)
-     - WALL_PENALTY  : negative reward when intended move hits a wall
-                       (only relevant if you count hitting a wall as a step)
-
-   Signature you need to implement:
-     def reward(state, action, next_state, goal,
-                goal_reward=100.0, step_cost=-1.0):
-         \"\"\"
-         Parameters
-         ----------
-         state      : tuple (row, col)
-         action     : tuple (dr, dc)
-         next_state : tuple (row, col)
-         goal       : tuple (row, col)
-
-         Returns
-         -------
-         float – scalar reward
-         \"\"\"
-         # TODO
-
-5. VALUE ITERATION  ─────────────────────────────────────────────────
-   Iteratively refines V(s) (expected discounted return from state s)
-   using the Bellman optimality equation:
-
-     V_{k+1}(s) = max_a  Σ_{s'} T(s,a,s') · [R(s,a,s') + γ · V_k(s')]
-
-   Key data structures:
-     V        : dict  {state → float}     – value table, init 0.0 everywhere
-     policy   : dict  {state → action}    – best action table
-     delta    : float                     – max change this iteration
-     GAMMA    : float  (0 < γ ≤ 1)        – discount factor
-                 γ close to 1 → patient, long-horizon planning
-                 γ close to 0 → myopic, prefers immediate rewards
-     EPSILON  : float                     – convergence threshold (e.g. 1e-4)
-
-   Convergence: stop when delta < EPSILON (or after MAX_ITERS iterations)
-
-   Signature you need to implement:
-     def value_iteration(maze, goal,
-                         gamma=0.99,
-                         epsilon=1e-4,
-                         max_iters=10_000,
-                         p_intended=1.0,
-                         p_sideways=0.0):
-         \"\"\"
-         Parameters
-         ----------
-         maze        : 2D list of int     – 0=free, 1=wall
-         goal        : tuple (row, col)   – terminal/target state
-         gamma       : float              – discount factor
-         epsilon     : float              – convergence delta threshold
-         max_iters   : int                – hard iteration cap
-         p_intended  : float              – prob of moving intended direction
-         p_sideways  : float              – prob of slipping sideways (each side)
-                                           p_back = 1 - p_intended - 2*p_sideways
-
-         Returns
-         -------
-         V           : dict {state → float}   – converged value table
-         policy      : dict {state → action}  – greedy policy (dr, dc)
-         iters       : int                    – iterations until convergence
-         residuals   : list of float          – delta per iteration (for plotting)
-         \"\"\"
-         # TODO
-
-6. POLICY EXTRACTION  ───────────────────────────────────────────────
-   After value iteration converges, extract the path from start → goal
-   by following policy[state] greedily.
-
-   Edge cases to handle:
-     - The policy leads into a cycle (shouldn't happen if γ < 1,
-       but detect with a visited-set anyway)
-     - The start state has no value (unreachable from goal side)
-
-   Signature you need to implement:
-     def extract_path(start, goal, policy, maze, max_steps=None):
-         \"\"\"
-         Parameters
-         ----------
-         start    : tuple (row, col)
-         goal     : tuple (row, col)
-         policy   : dict {state → action}  – output of value_iteration
-         maze     : 2D list
-         max_steps: int | None  – safety cap (default: rows*cols)
-
-         Returns
-         -------
-         path         : list of [row, col]   – same format as BFS/DFS/A*
-         visited_order: list of [row, col]   – every state touched during
-                                               policy rollout (for animation)
-         \"\"\"
-         # TODO
-
-7. TOP-LEVEL SOLVER (benchmark entry point)  ─────────────────────────
-   This is what server.py / benchmark_browser.py will call.
-   Mirror the interface of bfs / dfs / astar_h1 exactly.
-
-   def mdp_solver(maze, start, end, return_trace=False,
-                  gamma=0.99, epsilon=1e-4,
-                  p_intended=1.0, p_sideways=0.0):
-       \"\"\"
-       Parameters
-       ----------
-       maze         : 2D list                – 0=free, 1=wall
-       start        : tuple/list (row, col)
-       end          : tuple/list (row, col)
-       return_trace : bool
-       gamma        : float
-       epsilon      : float
-       p_intended   : float
-       p_sideways   : float
-
-       Returns
-       -------
-       If return_trace is True:
-           (path, visited_order)
-           path         : list of [row, col]  – solution path
-           visited_order: list of [row, col]  – policy rollout trace
-       If return_trace is False:
-           path only
-       \"\"\"
-       # TODO: call value_iteration → extract_path → return
-
-=======================================================================
-BENCHMARK-SPECIFIC METRICS (unique to MDP; add to compute_metrics later)
-=======================================================================
-
-These are things you can cheaply capture inside value_iteration and
-return to the benchmark harness:
-
-  planning_iters   : int    – number of Bellman sweeps until convergence
-  residuals        : list   – delta per iteration (plot convergence curve)
-  planning_time    : float  – wall-clock time for value_iteration alone
-  extraction_time  : float  – wall-clock time for extract_path alone
-  total_time       : float  – planning_time + extraction_time
-  cumulative_reward: float  – sum of R(s,a,s') along extracted path
-  discounted_return: float  – Σ γ^t · R_t along extracted path
-  states_valued    : int    – len(V)  (cells that received a finite value)
-  policy_path_len  : int    – len(path)
-
-=======================================================================
-INTEGRATION CHECKLIST (things to wire up once implemented)
-=======================================================================
-
-[ ] Add mdp_solver import to path_finding/__init__.py
-[ ] Add 'mdp' route to backend/server.py  (/solve endpoint)
-[ ] Add <option value="10"> to index.html dropdown
-[ ] Add python_mdp() and value "10" case to maze_solvers.js
-[ ] Add {'name': 'MDP', 'value': '10'} to algorithms list in benchmark_browser.py
-[ ] Extend compute_metrics() in benchmark_browser.py with MDP-specific columns
-[ ] Add MDP columns to CSV_COLUMNS header in benchmark_browser.py
-
-=======================================================================
-SUGGESTED FILE LAYOUT WHEN COMPLETE
-=======================================================================
-
-mdp.py
-├── ACTIONS          (module-level constant dict)
-├── get_transitions  (stochastic/deterministic transition model)
-├── reward           (reward function)
-├── value_iteration  (core Bellman loop → V, policy, iters, residuals)
-├── extract_path     (greedy rollout → path, visited_order)
-└── mdp_solver       (top-level entry point matching BFS/DFS/A* API)
+Both return (path, visited_order) or path depending on return_trace.
+They also attach extra planning statistics to the LAST_MDP_STATS dict
+so the benchmark harness / server can retrieve them after the call.
 """
 
+import time
+import math
 
-# -----------------------------------------------------------------------
-# Constants – define these first, then implement the functions above
-# -----------------------------------------------------------------------
+# ───────────────────────────────────────────────────────────────────────────
+# Constants
+# ───────────────────────────────────────────────────────────────────────────
 
 ACTIONS = {
     'UP':    (-1,  0),
@@ -262,21 +24,359 @@ ACTIONS = {
     'RIGHT': ( 0,  1),
 }
 
-# Default hyperparameters
-DEFAULT_GAMMA    = 0.99
-DEFAULT_EPSILON  = 1e-4
-DEFAULT_MAX_ITER = 10_000
+# Perpendicular slip pairs for each intended direction.
+# If the agent intends (dr, dc) it may slip 90° either side.
+_PERP = {
+    (-1,  0): [( 0, -1), ( 0,  1)],   # UP  → slip LEFT or RIGHT
+    ( 1,  0): [( 0, -1), ( 0,  1)],   # DOWN → slip LEFT or RIGHT
+    ( 0, -1): [(-1,  0), ( 1,  0)],   # LEFT → slip UP or DOWN
+    ( 0,  1): [(-1,  0), ( 1,  0)],   # RIGHT → slip UP or DOWN
+}
 
-# Reward constants – tweak these to change path behaviour
+DEFAULT_GAMMA       = 0.99
+DEFAULT_EPSILON     = 1e-4
+DEFAULT_MAX_ITER    = 10_000
+
 GOAL_REWARD  =  100.0
 STEP_COST    =   -1.0
-WALL_PENALTY =   -1.0   # optional; only applies if you penalise wall bumps
+
+# Module-level dict written by every top-level solver call.
+# Keys: planning_iters, planning_time, extraction_time,
+#       cumulative_reward, discounted_return, states_valued, residuals
+LAST_MDP_STATS: dict = {}
 
 
-# -----------------------------------------------------------------------
-# TODO: implement get_transitions(state, action, maze)
-# TODO: implement reward(state, action, next_state, goal, ...)
-# TODO: implement value_iteration(maze, goal, gamma, epsilon, ...)
-# TODO: implement extract_path(start, goal, policy, maze, ...)
-# TODO: implement mdp_solver(maze, start, end, return_trace, ...)
-# -----------------------------------------------------------------------
+# ───────────────────────────────────────────────────────────────────────────
+# Helpers
+# ───────────────────────────────────────────────────────────────────────────
+
+def _free_states(maze):
+    """Return the set of all passable (row, col) tuples."""
+    rows, cols = len(maze), len(maze[0])
+    return {(r, c) for r in range(rows) for c in range(cols) if maze[r][c] == 0}
+
+
+def _step(maze, state, direction):
+    """
+    Apply a direction to a state.  Returns the resulting state (stays put
+    if the move would leave the grid or enter a wall).
+    """
+    rows, cols = len(maze), len(maze[0])
+    r, c = state
+    dr, dc = direction
+    nr, nc = r + dr, c + dc
+    if 0 <= nr < rows and 0 <= nc < cols and maze[nr][nc] == 0:
+        return (nr, nc)
+    return state   # bounce back
+
+
+def _get_transitions(state, action, maze, p_intended, p_sideways):
+    """
+    Stochastic transition model.
+
+    With probability p_intended the agent moves in direction `action`.
+    With probability p_sideways it slips 90° left, and p_sideways right.
+    Remaining probability (p_back = 1 - p_intended - 2*p_sideways) it
+    moves backward (opposite of intended).
+
+    All wall bumps keep the agent in place.
+
+    Returns list of (probability, next_state) — probabilities sum to 1.
+    """
+    perp = _PERP[action]
+    back = (-action[0], -action[1])
+    p_back = max(0.0, 1.0 - p_intended - 2 * p_sideways)
+
+    outcomes = [
+        (p_intended,  _step(maze, state, action)),
+        (p_sideways,  _step(maze, state, perp[0])),
+        (p_sideways,  _step(maze, state, perp[1])),
+        (p_back,      _step(maze, state, back)),
+    ]
+
+    # Merge duplicate next-states (can happen when several moves bounce to same cell)
+    merged = {}
+    for prob, ns in outcomes:
+        if prob > 0:
+            merged[ns] = merged.get(ns, 0.0) + prob
+    return [(prob, ns) for ns, prob in merged.items()]
+
+
+def _reward(next_state, goal):
+    """R(s, a, s') — step cost unless we reached the goal."""
+    if next_state == goal:
+        return GOAL_REWARD
+    return STEP_COST
+
+
+def _extract_path(start, goal, policy, maze):
+    """
+    Follow the greedy policy from start until goal or until a cycle is detected.
+
+    Returns
+    -------
+    path         : list of [r, c]   – complete path including start and goal
+    visited_order: list of [r, c]   – same as path (every state stepped through)
+    cumulative_reward : float
+    discounted_return : float  (using gamma from calling scope — passed in)
+    """
+    max_steps = len(maze) * len(maze[0]) * 2
+    path = [list(start)]
+    visited_set = {start}
+    current = start
+    cum_r = 0.0
+
+    for _ in range(max_steps):
+        if current == goal:
+            break
+        action = policy.get(current)
+        if action is None:
+            break
+        nxt = _step(maze, current, action)
+        cum_r += _reward(nxt, goal)
+        path.append(list(nxt))
+        if nxt in visited_set:
+            break   # cycle guard
+        visited_set.add(nxt)
+        current = nxt
+
+    visited_order = path[:]   # for MDP the rollout trace IS the path
+    return path, visited_order, cum_r
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Algorithm 1 — Value Iteration
+# ───────────────────────────────────────────────────────────────────────────
+
+def _value_iteration(maze, goal, gamma, epsilon, max_iters, p_intended, p_sideways):
+    """
+    Core Bellman optimality loop.
+
+    V_{k+1}(s) = max_a  Σ_{s'} T(s,a,s') · [R(s,a,s') + γ · V_k(s')]
+
+    Stops when max|ΔV| < epsilon or max_iters is reached.
+
+    Returns
+    -------
+    V         : dict {state → float}  – converged value table
+    policy    : dict {state → action} – greedy action at each state
+    iters     : int
+    residuals : list of float         – max delta per iteration
+    """
+    states = _free_states(maze)
+    actions = list(ACTIONS.values())
+
+    V = {s: 0.0 for s in states}
+    V[goal] = 0.0   # terminal state has 0 future value (reward is on transition)
+    policy = {}
+    residuals = []
+
+    for iteration in range(max_iters):
+        delta = 0.0
+        V_new = {}
+
+        for s in states:
+            if s == goal:
+                V_new[s] = 0.0
+                policy[s] = (0, 0)
+                continue
+
+            best_val = -math.inf
+            best_act = None
+            for a in actions:
+                q = sum(
+                    prob * (_reward(ns, goal) + gamma * V[ns])
+                    for prob, ns in _get_transitions(s, a, maze, p_intended, p_sideways)
+                )
+                if q > best_val:
+                    best_val = q
+                    best_act = a
+
+            V_new[s] = best_val
+            policy[s] = best_act
+            delta = max(delta, abs(V_new[s] - V[s]))
+
+        V = V_new
+        residuals.append(delta)
+
+        if delta < epsilon:
+            return V, policy, iteration + 1, residuals
+
+    return V, policy, max_iters, residuals
+
+
+def mdp_value_iteration(maze, start, end, return_trace=False,
+                        gamma=DEFAULT_GAMMA, epsilon=DEFAULT_EPSILON,
+                        max_iters=DEFAULT_MAX_ITER,
+                        p_intended=1.0, p_sideways=0.0):
+    """
+    Maze solver using MDP Value Iteration.
+
+    Parameters mirror the BFS/DFS/A* API so the benchmark harness can call
+    all algorithms uniformly.
+
+    Extra stats are written to LAST_MDP_STATS after each call.
+    """
+    global LAST_MDP_STATS
+    start = tuple(start)
+    end   = tuple(end)
+
+    t0 = time.perf_counter()
+    V, policy, iters, residuals = _value_iteration(
+        maze, end, gamma, epsilon, max_iters, p_intended, p_sideways
+    )
+    planning_time = time.perf_counter() - t0
+
+    t1 = time.perf_counter()
+    path, visited_order, cum_reward = _extract_path(start, end, policy, maze)
+    extraction_time = time.perf_counter() - t1
+
+    # Discounted return along extracted path
+    disc_return = sum(
+        (gamma ** t) * (_reward(tuple(path[t + 1]), end) if t + 1 < len(path) else 0)
+        for t in range(len(path) - 1)
+    )
+
+    LAST_MDP_STATS = {
+        'planning_iters':    iters,
+        'planning_time':     planning_time,
+        'extraction_time':   extraction_time,
+        'cumulative_reward': cum_reward,
+        'discounted_return': disc_return,
+        'states_valued':     len(V),
+        'residuals':         residuals,
+    }
+
+    if return_trace:
+        return path, visited_order
+    return path
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Algorithm 2 — Policy Iteration
+# ───────────────────────────────────────────────────────────────────────────
+
+def _policy_evaluation(policy, V, maze, goal, gamma, eval_epsilon, p_intended, p_sideways):
+    """
+    Iterative policy evaluation — sweeps until the value function for the
+    *fixed* policy converges.
+
+    V^π(s) ≈ Σ_{s'} T(s,π(s),s') · [R(s,π(s),s') + γ · V^π(s')]
+    """
+    states = _free_states(maze)
+    while True:
+        delta = 0.0
+        for s in states:
+            if s == goal:
+                continue
+            a = policy[s]
+            v = sum(
+                prob * (_reward(ns, goal) + gamma * V[ns])
+                for prob, ns in _get_transitions(s, a, maze, p_intended, p_sideways)
+            )
+            delta = max(delta, abs(v - V[s]))
+            V[s] = v
+        if delta < eval_epsilon:
+            break
+    return V
+
+
+def _policy_iteration(maze, goal, gamma, epsilon, max_iters, p_intended, p_sideways):
+    """
+    Policy iteration: alternate policy evaluation and policy improvement
+    until the policy is stable.
+
+    Returns
+    -------
+    V         : dict {state → float}
+    policy    : dict {state → action}
+    iters     : int  – number of policy improvement sweeps
+    residuals : list – value-change per improvement round (for comparison)
+    """
+    states  = _free_states(maze)
+    actions = list(ACTIONS.values())
+
+    # Initialise with a fixed default action (e.g., always try to go RIGHT)
+    policy = {s: ACTIONS['RIGHT'] for s in states}
+    policy[goal] = (0, 0)
+    V = {s: 0.0 for s in states}
+    residuals = []
+
+    for iteration in range(max_iters):
+        # ── Policy Evaluation ──────────────────────────────────────────────
+        V_before = dict(V)
+        V = _policy_evaluation(policy, V, maze, goal, gamma, epsilon, p_intended, p_sideways)
+
+        delta = max(abs(V[s] - V_before[s]) for s in states)
+        residuals.append(delta)
+
+        # ── Policy Improvement ────────────────────────────────────────────
+        policy_stable = True
+        for s in states:
+            if s == goal:
+                continue
+            old_action = policy[s]
+            best_val = -math.inf
+            best_act = old_action
+            for a in actions:
+                q = sum(
+                    prob * (_reward(ns, goal) + gamma * V[ns])
+                    for prob, ns in _get_transitions(s, a, maze, p_intended, p_sideways)
+                )
+                if q > best_val:
+                    best_val = q
+                    best_act = a
+            policy[s] = best_act
+            if best_act != old_action:
+                policy_stable = False
+
+        if policy_stable:
+            return V, policy, iteration + 1, residuals
+
+    return V, policy, max_iters, residuals
+
+
+def mdp_policy_iteration(maze, start, end, return_trace=False,
+                         gamma=DEFAULT_GAMMA, epsilon=DEFAULT_EPSILON,
+                         max_iters=DEFAULT_MAX_ITER,
+                         p_intended=1.0, p_sideways=0.0):
+    """
+    Maze solver using MDP Policy Iteration.
+
+    Parameters mirror the BFS/DFS/A* API so the benchmark harness can call
+    all algorithms uniformly.
+
+    Extra stats are written to LAST_MDP_STATS after each call.
+    """
+    global LAST_MDP_STATS
+    start = tuple(start)
+    end   = tuple(end)
+
+    t0 = time.perf_counter()
+    V, policy, iters, residuals = _policy_iteration(
+        maze, end, gamma, epsilon, max_iters, p_intended, p_sideways
+    )
+    planning_time = time.perf_counter() - t0
+
+    t1 = time.perf_counter()
+    path, visited_order, cum_reward = _extract_path(start, end, policy, maze)
+    extraction_time = time.perf_counter() - t1
+
+    disc_return = sum(
+        (gamma ** t) * (_reward(tuple(path[t + 1]), end) if t + 1 < len(path) else 0)
+        for t in range(len(path) - 1)
+    )
+
+    LAST_MDP_STATS = {
+        'planning_iters':    iters,
+        'planning_time':     planning_time,
+        'extraction_time':   extraction_time,
+        'cumulative_reward': cum_reward,
+        'discounted_return': disc_return,
+        'states_valued':     len(V),
+        'residuals':         residuals,
+    }
+
+    if return_trace:
+        return path, visited_order
+    return path
