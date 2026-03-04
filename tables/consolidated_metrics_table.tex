@@ -1,0 +1,19 @@
+%% Auto-generated consolidated metric table
+\begin{table}[H]
+\centering
+\caption{Consolidated performance comparison across selected metrics.}
+\label{tab:metrics-consolidated}
+\vspace{4pt}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Algorithm & Time/Node ($\mu$s) & Peak Mem.\ (KB) & Opt.\ Ratio & Coverage \\
+\midrule
+Depth-First Search (DFS) & $5.79 \pm 3.14$ & $23.4 \pm 52.8$ & $0.8805 \pm 0.2071$ & $0.5831 \pm 0.2686$ \\
+Breadth-First Search (BFS) & $5.79 \pm 6.56$ & $22.3 \pm 43.8$ & $1.0000 \pm 0.0000$ & $0.6127 \pm 0.2511$ \\
+A* with Heuristic $h_1$ (Manhattan) & $6.52 \pm 6.03$ & $34.0 \pm 69.3$ & $1.0000 \pm 0.0000$ & $0.4826 \pm 0.2508$ \\
+A* with Heuristic $h_2$ (Euclidean) & $10.57 \pm 5.52$ & $30.0 \pm 67.5$ & $0.9954 \pm 0.0238$ & $0.4097 \pm 0.2275$ \\
+MDP Value Iteration & $7992.93 \pm 8585.25$ & $114.9 \pm 192.2$ & $1.0000 \pm 0.0000$ & $1.0000 \pm 0.0000$ \\
+MDP Policy Iteration & $30131.18 \pm 28377.60$ & $362.7 \pm 1417.0$ & $1.0000 \pm 0.0000$ & $1.0000 \pm 0.0000$ \\
+\bottomrule
+\end{tabularx}
+\end{table}

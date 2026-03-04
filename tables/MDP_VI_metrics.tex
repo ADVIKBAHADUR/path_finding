@@ -1,0 +1,53 @@
+%% Auto-generated metric table for MDP_VI
+\documentclass{article}
+\usepackage{booktabs, amsmath, tabularx, float}
+\begin{document}
+
+\begin{table}[H]
+\centering
+\caption{Performance metrics for MDP Value Iteration.}
+\label{tab:metrics-mdp-vi}
+
+\vspace{4pt}
+\textbf{Search Efficiency}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Coverage & Eff.\ Ratio & Time/Node ($\mu$s) \\
+\midrule
+$1.0000 \pm 0.0000$ & $0.2433 \pm 0.1329$ & $7992.93 \pm 8585.25$ \\
+\bottomrule
+\end{tabularx}
+
+\vspace{6pt}
+\textbf{Path Quality}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Opt.\ Ratio & Suboptimality & Turns/Size \\
+\midrule
+$1.0000 \pm 0.0000$ & $0.0000 \pm 0.0000$ & $0.61 \pm 0.51$ \\
+\bottomrule
+\end{tabularx}
+
+\vspace{6pt}
+\textbf{Memory \& Robustness}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Peak Frontier & Peak Mem.\ (KB) & Success Rate \\
+\midrule
+$394.3 \pm 655.8$ & $114.9 \pm 192.2$ & $0.9681 \pm 0.1767$ \\
+\bottomrule
+\end{tabularx}
+
+\vspace{6pt}
+\textbf{MDP Planning Metrics}\\[2pt]
+\begin{tabularx}{\linewidth}{>{{\centering\arraybackslash}}X >{{\centering\arraybackslash}}X >{{\centering\arraybackslash}}X}
+\toprule
+\textbf{Planning Iterations} & \textbf{Planning Time (ms/state)} & \textbf{Extraction Time ($\mu$s/state)} \\
+\midrule
+$92\ [57, 186]$ & $8.0 \pm 8.6$ & $0.68 \pm 0.42$ \\
+\bottomrule
+\end{tabularx}
+
+\end{table}
+
+\end{document}

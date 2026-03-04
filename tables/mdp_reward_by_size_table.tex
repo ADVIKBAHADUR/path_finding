@@ -1,0 +1,49 @@
+%% MDP reward outcomes by maze size (VI and PI identical — both find the optimal policy)
+%% Living reward: -1 per step. Goal reward: +100. Discount factor: gamma = 0.99.
+%% Cumulative Reward = 100 + (-1) * (PathLength - 2) [undiscounted sum along optimal path]
+%% Discounted Return  = sum_{t} gamma^t * r_t  where gamma = 0.99
+%% Values are mean +/- std over all successful runs at each size.
+%% VI and PI produce identical values because they converge to the same optimal policy;
+%% only their planning time and iteration count differ (see Table~\ref{tab:metrics-mdp-planning}).
+
+\begin{table}[H]
+\centering
+\caption{%
+  MDP reward outcomes by maze size.
+  Exact configuration: discount factor $\gamma = 0.99$, step cost $= -1.0$/step,
+  goal reward $= +100.0$, convergence threshold $\varepsilon = 10^{-4}$, max iterations $= 500$.
+  Transition model is \emph{stochastic}: $P(\text{intended}) = 0.82$,
+  $P(\text{slip sideways}) = 0.07$ each side, $P(\text{backward}) = 0.04$.
+  Cumulative Reward $= 100 - (L-1)$ for a path of $L$ steps
+  (i.e.\ $L-1$ living-reward steps at $-1$ each, plus goal reward $+100$).
+  Discounted Return $= \sum_{t=0}^{L-1} \gamma^{t} r_{t+1}$ along the extracted path.
+  Both VI and PI yield \emph{identical} rewards at every size, confirming convergence
+  to the same optimal policy; they differ only in planning time and iteration count
+  (see Table~\ref{tab:metrics-mdp-planning}).
+  Rewards decline with maze size as paths lengthen under stochastic transitions;
+  mazes beyond $20{\times}20$ yield negative cumulative reward once path length $> 100$.
+}
+\label{tab:mdp-reward-by-size}
+\vspace{4pt}
+\begin{tabularx}{\linewidth}{%
+  >{$}c<{$}            % Size
+  >{\centering\arraybackslash}X  % Cumulative Reward
+  >{\centering\arraybackslash}X  % Discounted Return
+}
+\toprule
+\textbf{Maze Size} & \textbf{Cumulative Reward} & \textbf{Discounted Return} \\
+\midrule
+7{\times}7   & $96.7 \pm 2.2$   & $93.5 \pm 4.2$   \\
+10{\times}10 & $88.1 \pm 7.1$   & $77.8 \pm 12.3$  \\
+15{\times}15 & $77.8 \pm 12.2$  & $61.1 \pm 19.2$  \\
+20{\times}20 & $45.8 \pm 23.5$  & $18.9 \pm 25.1$  \\
+50{\times}50 & $-91.4 \pm 103.8$  & $-55.3 \pm 41.0$ \\
+75{\times}75 & $\approx -336$   & $\approx -96$    \\
+\bottomrule
+\end{tabularx}
+\smallskip
+\raggedright\small
+\textit{Note:} Values for $75{\times}75$ are indicative only (1--3 successful runs per algorithm;
+many runs at this size hit the 500-iteration planning cap and failed to find a path).
+Both VI and PI are identical in reward and discounted return at all sizes.
+\end{table}

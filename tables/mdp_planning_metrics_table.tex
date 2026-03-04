@@ -1,0 +1,16 @@
+%% Auto-generated MDP-specific consolidated metric table
+\begin{table}[H]
+\centering
+\caption{MDP planning phase metrics: Value Iteration (VI) vs.\ Policy Iteration (PI). Planning and extraction times are normalised by the number of free cells (state space size) to allow fair comparison across maze sizes. \emph{Planning Iterations} is reported as median [Q\textsubscript{1}, Q\textsubscript{3}] because the distribution is bimodal---small mazes converge in $\sim$35 iterations while large mazes frequently reach the 500-iteration cap; all other columns report mean $\pm$ std. Reward outcomes (cumulative reward, discounted return) are strongly size-dependent and are reported per maze size in Table~\ref{tab:mdp-reward-by-size}.}
+\label{tab:metrics-mdp-planning}
+\vspace{4pt}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+\textbf{Algorithm} & \textbf{Planning Iterations} & \textbf{Planning Time (ms/state)} & \textbf{Extraction Time ($\mu$s/state)} \\
+\addlinespace[-2pt]
+\midrule
+Value Iteration (VI) & $92\ [57, 186]$ & $8.0 \pm 8.6$ & $0.68 \pm 0.42$ \\
+Policy Iteration (PI) & $5\ [3, 9]$ & $30.1 \pm 28.4$ & $0.63 \pm 0.38$ \\
+\bottomrule
+\end{tabularx}
+\end{table}

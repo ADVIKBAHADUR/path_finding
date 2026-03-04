@@ -59,10 +59,19 @@ def compute_metrics(result, free_cells, optimal_path_length):
     path          = result.get('path', [])
     visited_nodes = result.get('visited_nodes', [])
     t             = result.get('time', 0)
-    success       = bool(path)
+    goal          = result.get('goal')   # injected by harness after each algo run
 
-    path_length   = len(path)
-    turn_count    = compute_turn_count(path)
+    # Validate the path actually REACHED the goal — not just non-empty.
+    # MDP extraction can return a short path (e.g., 2 cells) when the policy
+    # loops or is unconverged; those must be treated as failures.
+    if path and goal is not None:
+        last = path[-1]
+        success = (list(last) == list(goal))
+    else:
+        success = bool(path)   # fallback: JS-side algos don’t inject goal yet
+
+    path_length  = len(path) if success else 0
+    turn_count   = compute_turn_count(path) if success else 0
 
     # For MDP the meaningful "nodes expanded" is states_valued (every cell
     # that participated in the Bellman sweep).  For search it is visited_nodes.
@@ -77,10 +86,12 @@ def compute_metrics(result, free_cells, optimal_path_length):
     time_per_node    = safe_div(t, visited_count)
 
     # ------------------------------------------------------------------
-    # Path quality (relative to BFS optimal)
+    # Path quality  (relative to A*h₁ admissible optimal)
+    # OptRatio  = L_opt / L_path  ∈ (0, 1]   — 1.0 = perfectly optimal
+    # Subopt    = (L_path − L_opt) / L_opt   ≥ 0  — 0 = perfectly optimal
     # ------------------------------------------------------------------
-    if success and optimal_path_length and optimal_path_length > 0:
-        optimality_ratio = path_length / optimal_path_length
+    if success and path_length > 0 and optimal_path_length and optimal_path_length > 0:
+        optimality_ratio = optimal_path_length / path_length          # always ≤ 1
         suboptimality    = (path_length - optimal_path_length) / optimal_path_length
     else:
         optimality_ratio = 'N/A'
@@ -101,24 +112,29 @@ def compute_metrics(result, free_cells, optimal_path_length):
     cum_reward       = _fmt('cumulative_reward', '.4f')
     disc_return      = _fmt('discounted_return', '.4f')
 
+    peak_frontier    = result.get('peak_frontier',     'N/A')
+    peak_memory_bytes = result.get('peak_memory_bytes', 'N/A')
+
     return {
-        'success':           1 if success else 0,
-        'time':              t,
-        'visited_nodes':     visited_count,
-        'path_length':       path_length,
-        'turn_count':        turn_count,
-        'search_coverage':   search_coverage,
-        'search_eff_ratio':  search_eff_ratio,
-        'time_per_node':     time_per_node,
-        'optimality_ratio':  optimality_ratio,
-        'suboptimality':     suboptimality,
+        'success':            1 if success else 0,
+        'time':               t,
+        'visited_nodes':      visited_count,
+        'path_length':        path_length,
+        'turn_count':         turn_count,
+        'search_coverage':    search_coverage,
+        'search_eff_ratio':   search_eff_ratio,
+        'time_per_node':      time_per_node,
+        'optimality_ratio':   optimality_ratio,
+        'suboptimality':      suboptimality,
+        'peak_frontier':      peak_frontier,
+        'peak_memory_bytes':  peak_memory_bytes,
         # MDP-only
-        'planning_iters':    planning_iters,
-        'planning_time':     planning_time,
-        'extraction_time':   extraction_time,
-        'cumulative_reward': cum_reward,
-        'discounted_return': disc_return,
-        'states_valued':     states_valued if states_valued is not None else 'N/A',
+        'planning_iters':     planning_iters,
+        'planning_time':      planning_time,
+        'extraction_time':    extraction_time,
+        'cumulative_reward':  cum_reward,
+        'discounted_return':  disc_return,
+        'states_valued':      states_valued if states_valued is not None else 'N/A',
     }
 
 # Configuration
@@ -181,6 +197,18 @@ try:
     
     # Fix 1: override hidden_clear to always regenerate grid regardless of window size check
     # Fix 2: patch maze_solvers_interval to set window.animation_complete when fully done
+    # Speed up CSS animations for benchmark – keep the visual effect but much faster
+    driver.execute_script("""
+        var style = document.createElement('style');
+        style.textContent = `
+            .cell_algo {
+                -webkit-animation-duration: 0.02s !important;
+                animation-duration: 0.02s !important;
+            }
+        `;
+        document.head.appendChild(style);
+    """)
+
     driver.execute_script("""
         window.hidden_clear = function() {
             for (let i = 0; i < timeouts.length; i++)
@@ -195,37 +223,44 @@ try:
         };
 
         // Patch the global maze_solvers_interval so we get a reliable completion signal.
-        // The original is defined at global scope so assigning here overrides it.
+        // Batched version: processes BATCH_SIZE nodes per tick at 1ms intervals.
+        // This keeps the animation visible but makes it ~500x faster than the
+        // original (1 node per 10ms tick).
+        window.ANIM_BATCH_SIZE = 50;   // nodes per tick
+        window.ANIM_INTERVAL_MS = 1;   // ms between ticks
         window.animation_complete = false;
         window.maze_solvers_interval = function() {
+            var BATCH = window.ANIM_BATCH_SIZE;
             my_interval = window.setInterval(function() {
-                if (!path) {
-                    if (node_list_index >= node_list.length) {
-                        if (!found) {
+                for (var b = 0; b < BATCH; b++) {
+                    if (!path) {
+                        if (node_list_index >= node_list.length) {
+                            if (!found) {
+                                clearInterval(my_interval);
+                                window.animation_complete = true;
+                                return;
+                            }
+                            path = true;
+                            place_to_cell(start_pos[0], start_pos[1]).classList.add('cell_path');
+                            break;  // yield so path drawing starts next tick
+                        }
+                        var node = node_list[node_list_index];
+                        place_to_cell(node[0], node[1]).classList.add('cell_algo');
+                        node_list_index++;
+                    } else {
+                        if (path_list_index >= path_list.length) {
+                            place_to_cell(target_pos[0], target_pos[1]).classList.add('cell_path');
                             clearInterval(my_interval);
-                            window.animation_complete = true;  // no-path end
+                            window.animation_complete = true;
                             return;
                         }
-                        path = true;
-                        place_to_cell(start_pos[0], start_pos[1]).classList.add('cell_path');
-                        return;
+                        var path_node = path_list[path_list_index];
+                        place_to_cell(path_node[0], path_node[1]).classList.remove('cell_algo');
+                        place_to_cell(path_node[0], path_node[1]).classList.add('cell_path');
+                        path_list_index++;
                     }
-                    let node = node_list[node_list_index];
-                    place_to_cell(node[0], node[1]).classList.add('cell_algo');
-                    node_list_index++;
-                } else {
-                    if (path_list_index >= path_list.length) {
-                        place_to_cell(target_pos[0], target_pos[1]).classList.add('cell_path');
-                        clearInterval(my_interval);
-                        window.animation_complete = true;  // path-found end
-                        return;
-                    }
-                    let path_node = path_list[path_list_index];
-                    place_to_cell(path_node[0], path_node[1]).classList.remove('cell_algo');
-                    place_to_cell(path_node[0], path_node[1]).classList.add('cell_path');
-                    path_list_index++;
                 }
-            }, 10);
+            }, window.ANIM_INTERVAL_MS);
         };
     """)
 
@@ -240,6 +275,8 @@ try:
         'SearchCoverage', 'SearchEffRatio', 'TimePerNode',
         # ── path quality ──────────────────────────────────────────────
         'PathOptimalityRatio', 'Suboptimality',
+        # ── memory & robustness ───────────────────────────────────────
+        'PeakFrontier', 'PeakMemory(bytes)',
         # ── MDP-specific (N/A for search algorithms) ──────────────────
         'PlanningIters', 'PlanningTime(s)', 'ExtractionTime(s)',
         'CumulativeReward', 'DiscountedReturn', 'StatesValued',
@@ -249,12 +286,16 @@ try:
         writer.writerow(CSV_COLUMNS)
 
     # Each config: size × path_counts × count_per mazes
-    # path_count=0 → unsolvable (start walled off)
     # path_count=1 → perfect maze (one unique solution)
     # path_count>1 → N-1 extra wall holes punched = ≈N alternative routes
+    # More paths = more route options = more suboptimality visible in DFS/MDP
     benchmark_configs = [
-        {'size': 20, 'path_counts': [0, 1, 2, 5, 10], 'count_per': 3},
-        {'size': 50, 'path_counts': [0, 1, 2, 5, 10], 'count_per': 3},
+        {'size': 7,  'path_counts': [1, 2, 3],          'count_per': 5},
+        {'size': 10, 'path_counts': [1, 2, 3, 4],       'count_per': 5},
+        {'size': 15, 'path_counts': [1, 2, 4, 8],       'count_per': 5},
+        {'size': 20, 'path_counts': [1, 2, 4, 8],       'count_per': 5},
+        {'size': 50, 'path_counts': [1, 2, 4, 8, 12],    'count_per': 3},
+        {'size': 75, 'path_counts': [1, 2, 4, 12, 20],'count_per': 3},
     ]
 
     # Python Algorithms mapping in select
@@ -312,6 +353,55 @@ try:
             )
 
             # ------------------------------------------------------------------
+            # Randomise start / stop positions so we get varied routing problems
+            # (not always the same top-left → bottom-right diagonal)
+            # ------------------------------------------------------------------
+            driver.execute_script(f"""
+                (function() {{
+                    var sz = {size};
+                    // Build list of all non-wall, non-border cells
+                    var candidates = [];
+                    var cells = document.querySelectorAll('.cell');
+                    cells.forEach(function(cell) {{
+                        if (!cell.classList.contains('cell_wall')) {{
+                            candidates.push(cell);
+                        }}
+                    }});
+                    if (candidates.length < 2) return;
+
+                    // Pick two distinct random cells that are far enough apart
+                    var pick = function() {{
+                        return candidates[Math.floor(Math.random() * candidates.length)];
+                    }};
+
+                    var minDist = Math.floor(sz * 0.4);  // at least 40% of size apart
+                    var sc, tc, attempts = 0;
+                    do {{
+                        sc = pick();
+                        tc = pick();
+                        var sx = parseInt(sc.classList[2].split('x_')[1]);
+                        var sy = parseInt(sc.classList[3].split('y_')[1]);
+                        var tx = parseInt(tc.classList[2].split('x_')[1]);
+                        var ty = parseInt(tc.classList[3].split('y_')[1]);
+                        attempts++;
+                    }} while ((Math.abs(sx-tx)+Math.abs(sy-ty) < minDist || sc === tc) && attempts < 200);
+
+                    // Move start marker
+                    var oldStart = document.querySelector('.start');
+                    if (oldStart) oldStart.classList.remove('start');
+                    sc.classList.add('start');
+                    start_pos = [sx, sy];
+
+                    // Move target marker
+                    var oldTarget = document.querySelector('.target');
+                    if (oldTarget) oldTarget.classList.remove('target');
+                    tc.classList.add('target');
+                    target_pos = [tx, ty];
+                }})();
+            """)
+            time.sleep(0.05)  # brief settle for DOM update
+
+            # ------------------------------------------------------------------
             # Extract maze context metrics from the DOM / JS state
             # ------------------------------------------------------------------
             maze_info = driver.execute_script("""
@@ -341,6 +431,8 @@ try:
             # Run every algorithm on the same maze; collect raw results first
             # ------------------------------------------------------------------
             raw_results = {}   # algo_name → raw result dict from backend
+            BACKEND_TIMEOUT   = 1200   # seconds
+            ANIMATION_TIMEOUT = 1200   # seconds
 
             for algo in algorithms:
                 algo_name = algo['name']
@@ -348,27 +440,59 @@ try:
 
                 driver.execute_script(f"document.querySelector('#slct_1').value = '{algo_val}';")
                 driver.execute_script("window.lastPythonResult = null; window.animation_complete = false;")
+                # Inject current goal position into result after the call so compute_metrics can validate
+                goal_pos = driver.execute_script("return typeof target_pos !== 'undefined' ? target_pos : null;")
                 driver.find_element(By.ID, "play").click()
 
-                # Wait for Python backend result
+                # Wait for Python backend result (increased timeout)
                 try:
-                    WebDriverWait(driver, 15).until(
+                    WebDriverWait(driver, BACKEND_TIMEOUT).until(
                         lambda d: d.execute_script("return window.lastPythonResult !== null")
                     )
                 except Exception:
-                    print(f"    Timeout waiting for Python result for {algo_name}")
-                    raw_results[algo_name] = None
+                    # Dismiss any JS alert (e.g. "Could not connect to backend") that
+                    # is blocking Selenium from executing further scripts.
+                    try:
+                        driver.switch_to.alert.accept()
+                    except Exception:
+                        pass
+                    print(f"    \u26a0 TIMEOUT / server error for {algo_name} "
+                          f"\u2013 recording as error")
+                    raw_results[algo_name] = {'path': [], 'visited_nodes': [], 'time': BACKEND_TIMEOUT,
+                                              'success': False, 'error': 'backend_timeout'}
+                    # Reset browser state so next algo can run cleanly
+                    try:
+                        driver.execute_script("""
+                            clearInterval(my_interval);
+                            window.animation_complete = true;
+                            window.lastPythonResult = null;
+                        """)
+                    except Exception:
+                        pass
                     continue
 
                 result = driver.execute_script("return window.lastPythonResult;")
+                if result is None:
+                    result = {}
+                # Attach goal so compute_metrics can validate the path really reached it
+                if goal_pos:
+                    result['goal'] = goal_pos
 
-                # Wait for animation to finish
+                # Wait for animation to finish (increased timeout)
                 try:
-                    WebDriverWait(driver, 30).until(
+                    WebDriverWait(driver, ANIMATION_TIMEOUT).until(
                         lambda d: d.execute_script("return window.animation_complete === true")
                     )
                 except Exception:
-                    print(f"    Warning: animation_complete timeout for {algo_name}")
+                    print(f"    \u26a0 Animation timeout for {algo_name}")
+                    try:
+                        driver.switch_to.alert.accept()
+                    except Exception:
+                        pass
+                    try:
+                        driver.execute_script("clearInterval(my_interval); window.animation_complete = true;")
+                    except Exception:
+                        pass
 
                 time.sleep(0.1)  # one frame buffer for final repaint
 
@@ -427,13 +551,17 @@ try:
                     algo_name = algo['name']
                     raw = raw_results.get(algo_name)
                     if raw is None:
-                        continue   # timed-out run; skip
+                        # Should not happen anymore (timeouts now create error dicts),
+                        # but keep as safety net – record an error row.
+                        raw = {'path': [], 'visited_nodes': [], 'time': 0,
+                               'success': False, 'error': 'missing_result'}
 
                     m = compute_metrics(raw, free_cells, optimal_path_length)
+                    cov_str = f"{m['search_coverage']:.3f}" if isinstance(m['search_coverage'], float) else str(m['search_coverage'])
                     print(f"    {algo_name}: success={m['success']}  "
                           f"t={m['time']:.5f}s  visited={m['visited_nodes']}  "
                           f"path={m['path_length']}  turns={m['turn_count']}  "
-                          f"coverage={m['search_coverage']:.3f}  "
+                          f"coverage={cov_str}  "
                           f"optRatio={m['optimality_ratio']}")
 
                     writer.writerow([
@@ -446,6 +574,9 @@ try:
                         f"{m['time_per_node']:.8f}"    if isinstance(m['time_per_node'],     float) else m['time_per_node'],
                         f"{m['optimality_ratio']:.6f}" if isinstance(m['optimality_ratio'],  float) else m['optimality_ratio'],
                         f"{m['suboptimality']:.6f}"    if isinstance(m['suboptimality'],     float) else m['suboptimality'],
+                        # memory & robustness
+                        m['peak_frontier'],
+                        m['peak_memory_bytes'],
                         # MDP-specific columns
                         m['planning_iters'],
                         m['planning_time'],

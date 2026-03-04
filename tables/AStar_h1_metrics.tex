@@ -1,0 +1,43 @@
+%% Auto-generated metric table for AStar_h1
+\documentclass{article}
+\usepackage{booktabs, amsmath, tabularx, float}
+\begin{document}
+
+\begin{table}[H]
+\centering
+\caption{Performance metrics for A* with Heuristic $h_1$ (Manhattan).}
+\label{tab:metrics-astar-h1}
+
+\vspace{4pt}
+\textbf{Search Efficiency}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Coverage & Eff.\ Ratio & Time/Node ($\mu$s) \\
+\midrule
+$0.4826 \pm 0.2508$ & $0.5883 \pm 0.2403$ & $6.52 \pm 6.03$ \\
+\bottomrule
+\end{tabularx}
+
+\vspace{6pt}
+\textbf{Path Quality}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Opt.\ Ratio & Suboptimality & Turns/Size \\
+\midrule
+$1.0000 \pm 0.0000$ & $0.0000 \pm 0.0000$ & $0.71 \pm 0.74$ \\
+\bottomrule
+\end{tabularx}
+
+\vspace{6pt}
+\textbf{Memory \& Robustness}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Peak Frontier & Peak Mem.\ (KB) & Success Rate \\
+\midrule
+$5.2 \pm 3.0$ & $34.0 \pm 69.3$ & $1.0000 \pm 0.0000$ \\
+\bottomrule
+\end{tabularx}
+
+\end{table}
+
+\end{document}

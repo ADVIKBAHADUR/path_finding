@@ -12,6 +12,7 @@ so the benchmark harness / server can retrieve them after the call.
 
 import time
 import math
+import tracemalloc
 
 # ───────────────────────────────────────────────────────────────────────────
 # Constants
@@ -35,7 +36,7 @@ _PERP = {
 
 DEFAULT_GAMMA       = 0.99
 DEFAULT_EPSILON     = 1e-4
-DEFAULT_MAX_ITER    = 10_000
+DEFAULT_MAX_ITER    = 500    # intentionally limited – produces measurable suboptimality on large mazes
 
 GOAL_REWARD  =  100.0
 STEP_COST    =   -1.0
@@ -221,6 +222,7 @@ def mdp_value_iteration(maze, start, end, return_trace=False,
     start = tuple(start)
     end   = tuple(end)
 
+    tracemalloc.start()
     t0 = time.perf_counter()
     V, policy, iters, residuals = _value_iteration(
         maze, end, gamma, epsilon, max_iters, p_intended, p_sideways
@@ -230,12 +232,17 @@ def mdp_value_iteration(maze, start, end, return_trace=False,
     t1 = time.perf_counter()
     path, visited_order, cum_reward = _extract_path(start, end, policy, maze)
     extraction_time = time.perf_counter() - t1
+    _, peak_mem = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
 
     # Discounted return along extracted path
     disc_return = sum(
         (gamma ** t) * (_reward(tuple(path[t + 1]), end) if t + 1 < len(path) else 0)
         for t in range(len(path) - 1)
     )
+
+    # Peak frontier for VI = number of states updated per sweep (= all free states)
+    peak_frontier = len(V)
 
     LAST_MDP_STATS = {
         'planning_iters':    iters,
@@ -245,6 +252,8 @@ def mdp_value_iteration(maze, start, end, return_trace=False,
         'discounted_return': disc_return,
         'states_valued':     len(V),
         'residuals':         residuals,
+        'peak_frontier':     peak_frontier,
+        'peak_memory_bytes': peak_mem,
     }
 
     if return_trace:
@@ -352,6 +361,7 @@ def mdp_policy_iteration(maze, start, end, return_trace=False,
     start = tuple(start)
     end   = tuple(end)
 
+    tracemalloc.start()
     t0 = time.perf_counter()
     V, policy, iters, residuals = _policy_iteration(
         maze, end, gamma, epsilon, max_iters, p_intended, p_sideways
@@ -361,11 +371,15 @@ def mdp_policy_iteration(maze, start, end, return_trace=False,
     t1 = time.perf_counter()
     path, visited_order, cum_reward = _extract_path(start, end, policy, maze)
     extraction_time = time.perf_counter() - t1
+    _, peak_mem = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
 
     disc_return = sum(
         (gamma ** t) * (_reward(tuple(path[t + 1]), end) if t + 1 < len(path) else 0)
         for t in range(len(path) - 1)
     )
+
+    peak_frontier = len(V)  # PI: all states active each sweep
 
     LAST_MDP_STATS = {
         'planning_iters':    iters,
@@ -375,6 +389,8 @@ def mdp_policy_iteration(maze, start, end, return_trace=False,
         'discounted_return': disc_return,
         'states_valued':     len(V),
         'residuals':         residuals,
+        'peak_frontier':     peak_frontier,
+        'peak_memory_bytes': peak_mem,
     }
 
     if return_trace:

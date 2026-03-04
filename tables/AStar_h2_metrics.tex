@@ -1,0 +1,43 @@
+%% Auto-generated metric table for AStar_h2
+\documentclass{article}
+\usepackage{booktabs, amsmath, tabularx, float}
+\begin{document}
+
+\begin{table}[H]
+\centering
+\caption{Performance metrics for A* with Heuristic $h_2$ (Euclidean).}
+\label{tab:metrics-astar-h2}
+
+\vspace{4pt}
+\textbf{Search Efficiency}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Coverage & Eff.\ Ratio & Time/Node ($\mu$s) \\
+\midrule
+$0.4097 \pm 0.2275$ & $0.6852 \pm 0.2250$ & $10.57 \pm 5.52$ \\
+\bottomrule
+\end{tabularx}
+
+\vspace{6pt}
+\textbf{Path Quality}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Opt.\ Ratio & Suboptimality & Turns/Size \\
+\midrule
+$0.9954 \pm 0.0238$ & $0.0053 \pm 0.0287$ & $0.72 \pm 0.74$ \\
+\bottomrule
+\end{tabularx}
+
+\vspace{6pt}
+\textbf{Memory \& Robustness}\\[2pt]
+\begin{tabularx}{\linewidth}{>{\centering\arraybackslash}X >{\centering\arraybackslash}X >{\centering\arraybackslash}X}
+\toprule
+Peak Frontier & Peak Mem.\ (KB) & Success Rate \\
+\midrule
+$5.1 \pm 2.7$ & $30.0 \pm 67.5$ & $1.0000 \pm 0.0000$ \\
+\bottomrule
+\end{tabularx}
+
+\end{table}
+
+\end{document}
